@@ -1,0 +1,6 @@
+google-genai>=0.2.0
+google-cloud-firestore
+streamlit
+numpy
+scikit-learn
+google-cloud-aiplatform

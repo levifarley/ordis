@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE & AI Agent caches
+.agents/
+.vscode/
+.idea/
+
+# Environments & Dependencies
+venv/
+.venv/
+env/
+ENV/
+
+# Secrets & Local Configurations
+.env
+secrets.py
+
+# OS / System clutter
+.DS_Store
+Thumbs.db
