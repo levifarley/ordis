@@ -1,0 +1,13 @@
+.venv
+venv
+__pycache__
+.git
+.agents
+*.pyc
+*.pyo
+*.pyd
+.env
+local_telemetry.jsonl
+crawler_cache.json
+scheduler_status.json
+gcloud_cred.json

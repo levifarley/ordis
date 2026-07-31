@@ -8,7 +8,8 @@ from ingest import ingest_data
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-STATUS_FILE = "/projects/ordis/scheduler_status.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATUS_FILE = os.path.join(BASE_DIR, "scheduler_status.json")
 
 def save_status(status: str, details: dict = None):
     try:

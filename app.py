@@ -99,7 +99,8 @@ st.markdown(
 
 # Load cropped ordis logo and encode to base64
 def get_base64_logo():
-    logo_path = "/projects/ordis/ordis_logo.png"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = os.path.join(base_dir, "ordis_logo.png")
     if os.path.exists(logo_path):
         try:
             with open(logo_path, "rb") as f:

@@ -43,7 +43,20 @@ class SemanticCache:
             max_similarity = float(similarities[max_idx])
             
             if max_similarity >= self.threshold:
-                return self.responses[max_idx], max_similarity
+                # Move hit to the end (Most Recently Used)
+                hit_query = self.queries[max_idx]
+                hit_embedding = self.embeddings[max_idx]
+                hit_response = self.responses[max_idx]
+                
+                self.queries.pop(max_idx)
+                self.embeddings.pop(max_idx)
+                self.responses.pop(max_idx)
+                
+                self.queries.append(hit_query)
+                self.embeddings.append(hit_embedding)
+                self.responses.append(hit_response)
+                
+                return hit_response, max_similarity
             
             return None, max_similarity
 
@@ -53,6 +66,14 @@ class SemanticCache:
         """
         with self.lock:
             q_emb = np.array(query_embedding, dtype=np.float32)
+            
+            # Enforce cache size limits (LRU eviction)
+            if len(self.queries) >= config.MAX_CACHE_SIZE:
+                if self.queries:
+                    self.queries.pop(0)
+                    self.embeddings.pop(0)
+                    self.responses.pop(0)
+                    
             self.queries.append(query)
             self.embeddings.append(q_emb)
             self.responses.append(response)

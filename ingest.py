@@ -26,11 +26,12 @@ DATA_FEEDS = {
     "Secondary": "https://cdn.jsdelivr.net/gh/WFCD/warframe-items@latest/data/json/Secondary.json",
     "Melee": "https://cdn.jsdelivr.net/gh/WFCD/warframe-items@latest/data/json/Melee.json",
     "Mods": "https://cdn.jsdelivr.net/gh/WFCD/warframe-items@latest/data/json/Mods.json",
-    "Upgrades": "https://cdn.jsdelivr.net/gh/WFCD/warframe-items@latest/data/json/Upgrades.json" # contains Arcanes
+    "Arcanes": "https://cdn.jsdelivr.net/gh/WFCD/warframe-items@latest/data/json/Arcanes.json"
 }
 
 WIKI_PAGES = ["Damage", "Status_Effect", "Affinity", "Mastery_Rank"]
-CRAWLER_CACHE_FILE = "/projects/ordis/crawler_cache.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CRAWLER_CACHE_FILE = os.path.join(BASE_DIR, "crawler_cache.json")
 
 def make_warframe_text(item: dict) -> str:
     name = item.get("name", "Unknown Warframe")
@@ -263,6 +264,8 @@ def get_market_slug(item_name: str) -> str:
     s = s.replace(" - ", "_").replace(" -", "_").replace("- ", "_").replace("-", "_")
     s = re.sub(r'[^a-z0-9_\s]', '', s)
     s = re.sub(r'\s+', '_', s.strip())
+    if s.endswith("_prime"):
+        return f"{s}_set"
     return s
 
 def fetch_market_price_stats(slug: str) -> str:
@@ -295,7 +298,7 @@ def ingest_data() -> dict:
     under strict token limits, HTTP cache policies, and idempotent hash checks.
     """
     if "GOOGLE_APPLICATION_CREDENTIALS" not in os.environ:
-        local_adc = "/root/.config/gcloud/application_default_credentials.json"
+        local_adc = os.path.expanduser("~/.config/gcloud/application_default_credentials.json")
         if os.path.exists(local_adc):
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = local_adc
 
@@ -335,7 +338,7 @@ def ingest_data() -> dict:
             elif category == "Mods":
                 content_text = make_mod_text(item)
                 title_str = f"Mod - {name}"
-            elif category == "Upgrades" and item.get("type") == "Arcane":
+            elif category == "Arcanes":
                 content_text = make_arcane_text(item)
                 title_str = f"Arcane - {name}"
             else:
@@ -394,7 +397,7 @@ def ingest_data() -> dict:
         logger.warning(f"Ingestion halted: token requirements ({total_tokens_estimated}) exceed the safeguard limit of {config.MAX_EMBEDDING_TOKENS_PER_CYCLE}!")
         return {"status": "halted_token_limit", "new_embeddings": 0, "prices_updated": 0}
         
-    batch_size = 50
+    batch_size = 15
     total_embedded = 0
     
     for i in range(0, len(all_chunks), batch_size):

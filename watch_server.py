@@ -5,11 +5,8 @@ import subprocess
 
 def get_watched_files():
     watched = []
-    # Watch config.py, requirements.txt, .env, and all .py files in current directory
-    # Exclude virtual env, cache directories, git folders, etc.
     exclude_dirs = {'.venv', 'venv', '__pycache__', '.git', '.agents'}
     for root, dirs, files in os.walk('.'):
-        # Modify dirs in-place to avoid descending into excluded directories
         dirs[:] = [d for d in dirs if d not in exclude_dirs]
         for f in files:
             if f.endswith('.py') or f == 'requirements.txt' or f == '.env':
@@ -26,38 +23,60 @@ def get_mtimes(files):
     return mtimes
 
 def main():
-    cmd = [
-        ".venv/bin/streamlit", "run", "app.py",
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_bin = os.path.join(base_dir, ".venv", "bin")
+    
+    cmd_streamlit = [
+        os.path.join(venv_bin, "streamlit"), "run", os.path.join(base_dir, "app.py"),
         "--server.port=8080", "--server.address=0.0.0.0",
-        "--server.fileWatcherType=none"  # disable streamlit's own watcher to prevent double-reloading
+        "--server.fileWatcherType=none"
+    ]
+    cmd_scheduler = [
+        os.path.join(venv_bin, "python"), os.path.join(base_dir, "scheduler.py")
     ]
     
-    print(f"Starting server watcher: {' '.join(cmd)}")
+    print(f"Starting server watcher...")
+    print(f"  Streamlit: {' '.join(cmd_streamlit)}")
+    print(f"  Scheduler: {' '.join(cmd_scheduler)}")
     
-    process = None
+    proc_streamlit = None
+    proc_scheduler = None
+    
     try:
         watched_files = get_watched_files()
         last_mtimes = get_mtimes(watched_files)
         
-        # Start initial process
-        process = subprocess.Popen(cmd)
+        # Start processes
+        proc_streamlit = subprocess.Popen(cmd_streamlit)
+        proc_scheduler = subprocess.Popen(cmd_scheduler)
         
         while True:
             time.sleep(1.0)
             
             # Check if streamlit exited unexpectedly
-            if process.poll() is not None:
-                print("Streamlit process exited. Restarting in 2 seconds...")
+            if proc_streamlit.poll() is not None:
+                print("Streamlit process exited. Restarting both processes in 2 seconds...")
                 time.sleep(2.0)
-                process = subprocess.Popen(cmd)
+                try:
+                    proc_scheduler.terminate()
+                    proc_scheduler.wait(timeout=2)
+                except Exception:
+                    pass
+                proc_streamlit = subprocess.Popen(cmd_streamlit)
+                proc_scheduler = subprocess.Popen(cmd_scheduler)
                 watched_files = get_watched_files()
                 last_mtimes = get_mtimes(watched_files)
+                continue
+                
+            # Check if scheduler exited unexpectedly
+            if proc_scheduler.poll() is not None:
+                print("Scheduler process exited. Restarting scheduler...")
+                proc_scheduler = subprocess.Popen(cmd_scheduler)
                 continue
                 
             current_files = get_watched_files()
             current_mtimes = get_mtimes(current_files)
             
-            # Check for changes in file list or file modification times
             changed = False
             if set(current_files) != set(watched_files):
                 changed = True
@@ -66,27 +85,36 @@ def main():
                 for f in current_files:
                     if current_mtimes.get(f) != last_mtimes.get(f):
                         changed = True
-                        print(f"File modified: {f}")
+                        print(f"Code file modified: {f}")
                         break
             
             if changed:
-                print("Change detected. Rebooting application server...")
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+                print("Code or environment change detected. Rebooting processes...")
+                proc_streamlit.terminate()
+                proc_scheduler.terminate()
                 
-                print("Server stopped. Restarting...")
-                process = subprocess.Popen(cmd)
+                for p in (proc_streamlit, proc_scheduler):
+                    try:
+                        p.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        p.kill()
+                        p.wait()
+                
+                print("Processes stopped. Restarting...")
+                proc_streamlit = subprocess.Popen(cmd_streamlit)
+                proc_scheduler = subprocess.Popen(cmd_scheduler)
                 watched_files = current_files
                 last_mtimes = current_mtimes
                 
     except KeyboardInterrupt:
-        if process:
-            process.terminate()
-            process.wait()
+        print("Stopping watched processes...")
+        for p in (proc_streamlit, proc_scheduler):
+            if p:
+                try:
+                    p.terminate()
+                    p.wait()
+                except Exception:
+                    pass
         sys.exit(0)
 
 if __name__ == "__main__":

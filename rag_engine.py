@@ -1,6 +1,10 @@
 import os
 import uuid
 import logging
+import time
+import json
+import re
+from datetime import datetime, timezone
 from google import genai
 from google.genai import types
 from google.cloud import aiplatform
@@ -8,6 +12,15 @@ from google.cloud import aiplatform
 import config
 from firestore_db import search_vector, check_and_increment_usage
 from cache import semantic_cache
+
+def sanitize_input(text: str) -> str:
+    """
+    Strips HTML tags and non-printable control characters from input string.
+    """
+    text = re.sub(r'<[^>]*>', '', text)
+    text = "".join(ch for ch in text if ch.isprintable() or ch in ('\n', '\r', '\t'))
+    return text.strip()
+
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO)
@@ -181,14 +194,18 @@ class RAGEngine:
         Executes the vector lookup, usage checks, and returns a Gemini response stream.
         """
         client = get_genai_client()
+        start_time = time.time()
+        
+        # Sanitize query input
+        sanitized_query = sanitize_input(query)
         
         # 1. Condense query if history exists
-        search_query = condense_query(client, query, chat_history)
+        search_query = condense_query(client, sanitized_query, chat_history)
         
         # 2. Embed search query
         query_emb = get_embedding(search_query)
         
-        # 3. Check semantic cache using search query (only on first-turn queries to prevent conversation cross-talk)
+        # 3. Check semantic cache using search query
         cached_response = None
         similarity = 0.0
         if not chat_history:
@@ -204,7 +221,8 @@ class RAGEngine:
                     "context_docs": [],
                     "cache_hit": True,
                     "similarity_score": similarity,
-                    "query_emb": query_emb
+                    "query_emb": query_emb,
+                    "start_time": start_time
                 }
             logger.info(f"Semantic Cache MISS (Similarity: {similarity if similarity is not None else 0.0:.4f}). Checking usage limit...")
         else:
@@ -218,7 +236,8 @@ class RAGEngine:
                 "context_docs": [],
                 "cache_hit": False,
                 "similarity_score": similarity,
-                "query_emb": query_emb
+                "query_emb": query_emb,
+                "start_time": start_time
             }
         
         logger.info("Usage within limits. Performing Firestore query...")
@@ -226,19 +245,23 @@ class RAGEngine:
         # 5. Retrieve documents from Firestore Vector DB using embedded search query
         context_docs = search_vector(query_emb, limit=3)
         
-        # 6. Ground prompt in context XML
-        context_str = "\n".join([
-            f"<document title='{doc['title']}'>\n{doc['content']}\n</document>"
-            for doc in context_docs
-        ])
+        # 6. Ground prompt in context XML, including cached market price metadata if available
+        context_parts = []
+        for doc in context_docs:
+            doc_str = f"<document title='{doc['title']}'>"
+            if doc.get("market_price"):
+                doc_str += f"\n[Market Info: {doc['market_price']}]"
+            doc_str += f"\n{doc['content']}\n</document>"
+            context_parts.append(doc_str)
+        context_str = "\n".join(context_parts)
         
         prompt = f"""Based on the following retrieved information, answer the user's question.
-
+ 
 <context>
 {context_str}
 </context>
-
-Question: {query}
+ 
+Question: {sanitized_query}
 Answer:"""
         
         print("\n=== SUBMITTING PROMPT TO GEMINI ===")
@@ -263,16 +286,44 @@ Answer:"""
             "cache_hit": False,
             "similarity_score": similarity,
             "query_emb": query_emb,
-            "search_query": search_query
+            "search_query": search_query,
+            "start_time": start_time
         }
 
 
     def log_telemetry_to_vertex(self, prompt: str, response: str, payload: dict):
         """
-        Asynchronously called to commit response to cache and upload to Vertex AI.
+        Asynchronously called to commit response to cache, write local log, and upload to Vertex AI.
         """
         cache_hit = payload.get("cache_hit", False)
+        latency = time.time() - payload.get("start_time", time.time())
         
+        # 1. Write Local Telemetry Log File (Used for the public privacy-safe dashboard)
+        try:
+            record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "latency": latency,
+                "cache_hit": cache_hit,
+                "similarity_score": payload.get("similarity_score"),
+                "query": prompt,
+                "response": response,
+                "context_count": len(payload.get("context_docs", [])),
+                "context_docs": [
+                    {
+                        "id": doc.get("id"),
+                        "title": doc.get("title"),
+                        "distance": doc.get("distance")
+                    }
+                    for doc in payload.get("context_docs", [])
+                ],
+                "word_count": len(response.split())
+            }
+            with open(config.TELEMETRY_LOG_PATH, "a") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception as e:
+            logger.error(f"Failed to log local telemetry JSONL: {e}")
+        
+        # 2. Upload telemetry to Vertex AI and save to semantic cache
         if not cache_hit:
             print("\n=== GEMINI RESPONSE ===")
             print(response)
@@ -301,4 +352,5 @@ Answer:"""
                 cache_hit=True,
                 similarity_score=payload.get("similarity_score")
             )
+
 

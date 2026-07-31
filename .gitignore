@@ -21,3 +21,9 @@ secrets.py
 # OS / System clutter
 .DS_Store
 Thumbs.db
+
+# Local database, cache, and telemetry logs
+crawler_cache.json
+local_telemetry.jsonl
+scheduler_status.json
+gcloud_cred.json

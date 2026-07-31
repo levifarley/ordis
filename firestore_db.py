@@ -59,6 +59,7 @@ def search_vector(query_embedding: list[float], limit: int = 3) -> list[dict]:
             "id": doc.id,
             "title": data.get("title", ""),
             "content": data.get("content", ""),
+            "market_price": data.get("market_price", ""),
             "distance": data.get("vector_distance")
         })
     return docs
@@ -99,4 +100,30 @@ def check_and_increment_usage(limit: int = 300) -> tuple[bool, int]:
         return True, new_count
 
     return update_in_transaction(transaction, doc_ref)
+
+def get_existing_hashes() -> dict[str, str]:
+    """
+    Fetches all document IDs and their content_hash fields using projections (.select).
+    Returns a dict mapping doc_id -> content_hash.
+    """
+    db = get_firestore_client()
+    docs = db.collection(config.COLLECTION_NAME).select(["content_hash"]).stream()
+    hashes = {}
+    for doc in docs:
+        data = doc.to_dict()
+        hashes[doc.id] = data.get("content_hash", "")
+    return hashes
+
+def update_market_price(doc_id: str, market_price: str):
+    """
+    Updates only the market_price of a document in Firestore.
+    Does NOT regenerate or alter the vector embedding.
+    """
+    db = get_firestore_client()
+    doc_ref = db.collection(config.COLLECTION_NAME).document(doc_id)
+    doc_ref.set({
+        "market_price": market_price,
+        "last_updated": datetime.now(timezone.utc)
+    }, merge=True)
+
 
