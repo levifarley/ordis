@@ -2,7 +2,7 @@
   <img width="886" height="1058" alt="image" src="https://github.com/user-attachments/assets/17178018-bccb-476e-868e-1c61ab54e767" />
 </p>
 
-# ORDIS: Cephalon Information & Combat Guide
+# ORDIS: Warframe Information & Combat Guide
 
 ORDIS is a zero-cost, highly optimized, and modular Retrieval-Augmented Generation (RAG) system built in Python. Designed as an interactive helper for the Warframe universe, ORDIS utilizes Streamlit for a dark HUD chat dashboard, Google Firestore for native Vector Search, and Gemini 2.5 Flash for grounded responses delivered in the iconic tone of Cephalon Ordis.
 
