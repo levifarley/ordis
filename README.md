@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="500" alt="screenshot" src="https://github.com/user-attachments/assets/8a4f043b-3f87-43b0-853c-9600dcc72bd4" />
+  <img width="886" height="1058" alt="image" src="https://github.com/user-attachments/assets/17178018-bccb-476e-868e-1c61ab54e767" />
 </p>
 
 # ORDIS: Cephalon Information & Combat Guide
