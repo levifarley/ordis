@@ -123,26 +123,43 @@ if logo_base64:
         unsafe_allow_html=True
     )
 
-# Helper to render a copy-to-clipboard button
 def render_copy_button(text: str, element_id: str):
     escaped_text = text.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$').replace('\n', '\\n').replace('\r', '\\r')
     html_code = f"""
-    <div style="display: flex; justify-content: flex-end; margin-top: -15px; margin-bottom: 2px;">
+    <style>
+    body {{
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: transparent;
+    }}
+    .container {{
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        height: 20px;
+        padding-right: 4px;
+    }}
+    button {{
+        background-color: transparent;
+        color: rgba(255, 255, 255, 0.45);
+        border: none;
+        padding: 2px;
+        cursor: pointer;
+        transition: color 0.15s ease-in-out;
+        outline: none;
+        display: flex;
+        align-items: center;
+        height: 20px;
+    }}
+    button:hover {{
+        color: rgba(255, 255, 255, 0.85);
+    }}
+    </style>
+    <div class="container">
         <textarea id="t-{element_id}" style="position: absolute; left: -9999px;">{escaped_text}</textarea>
-        <button onclick="doCopy('{element_id}')" id="b-{element_id}" style="
-            background-color: transparent;
-            color: rgba(255, 255, 255, 0.45);
-            border: none;
-            padding: 4px;
-            cursor: pointer;
-            transition: color 0.15s ease-in-out;
-            outline: none;
-            display: flex;
-            align-items: center;
-            font-size: 11px;
-            font-family: inherit;
-        " onmouseover="this.style.color='rgba(255,255,255,0.85)';" onmouseout="this.style.color='rgba(255,255,255,0.45)';">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <button onclick="doCopy('{element_id}')" id="b-{element_id}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
         </button>
     </div>
     <script>
@@ -152,14 +169,14 @@ def render_copy_button(text: str, element_id: str):
         copyText.setSelectionRange(0, 99999);
         document.execCommand('copy');
         var btn = document.getElementById('b-' + id);
-        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>';
         setTimeout(function() {{
-            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
         }}, 2000);
     }}
     </script>
     """
-    st.components.v1.html(html_code, height=28)
+    st.components.v1.html(html_code, height=20)
 
 # -------------------------------------------------------------------
 # 1. CACHED INITIALIZATION & RATE LIMITS
@@ -312,50 +329,12 @@ if user_prompt:
             daemon=True
         ).start()
 
-# Inject a JavaScript helper to insert a copy button beside the chat input submit button
-input_copy_js = """
+# Inject a JavaScript helper to perform char-limit and cooldown border highlighting on the chat input
+input_validation_js = """
 <script>
-function injectInputCopyButton() {
+function injectInputValidation() {
     var chatInputContainer = window.parent.document.querySelector('div[data-testid="stChatInput"]');
     if (chatInputContainer) {
-        // 1. Inject Copy Button if missing
-        if (!window.parent.document.getElementById('custom-input-copy-btn')) {
-            var submitBtn = chatInputContainer.querySelector('button');
-            if (submitBtn) {
-                var copyBtn = window.parent.document.createElement('button');
-                copyBtn.id = 'custom-input-copy-btn';
-                copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
-                copyBtn.style.backgroundColor = 'transparent';
-                copyBtn.style.color = 'rgba(255, 255, 255, 0.45)';
-                copyBtn.style.border = 'none';
-                copyBtn.style.padding = '8px';
-                copyBtn.style.cursor = 'pointer';
-                copyBtn.style.outline = 'none';
-                copyBtn.style.marginRight = '4px';
-                copyBtn.style.display = 'flex';
-                copyBtn.style.alignItems = 'center';
-                copyBtn.style.transition = 'color 0.15s';
-                
-                copyBtn.onmouseover = function() { this.style.color = 'rgba(255, 255, 255, 0.85)'; };
-                copyBtn.onmouseout = function() { this.style.color = 'rgba(255, 255, 255, 0.45)'; };
-                
-                copyBtn.onclick = function(e) {
-                    e.preventDefault();
-                    var textarea = chatInputContainer.querySelector('textarea');
-                    if (textarea) {
-                        navigator.clipboard.writeText(textarea.value).then(function() {
-                            copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
-                            setTimeout(function() {
-                                copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
-                            }, 2000);
-                        });
-                    }
-                };
-                submitBtn.parentNode.insertBefore(copyBtn, submitBtn);
-            }
-        }
-        
-        // 2. Validate Limit & Cooldown to Highlight Border Red/Green
         var textarea = chatInputContainer.querySelector('textarea');
         if (textarea) {
             var maxChars = 250;
@@ -385,8 +364,8 @@ function injectInputCopyButton() {
         }
     }
 }
-setTimeout(injectInputCopyButton, 100);
-setInterval(injectInputCopyButton, 1000);
+setTimeout(injectInputValidation, 100);
+setInterval(injectInputValidation, 1000);
 </script>
 """
-st.components.v1.html(input_copy_js, height=0)
+st.components.v1.html(input_validation_js, height=0)
