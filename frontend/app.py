@@ -144,19 +144,28 @@ def render_copy_button(text: str, element_id: str):
     """
     st.components.v1.html(html_code, height=20)
 
+def get_target_backend_urls() -> List[str]:
+    primary = BACKEND_URL
+    urls = [primary]
+    if "127.0.0.1" not in primary and "localhost" not in primary:
+        urls.append("http://127.0.0.1:8000")
+        urls.append("http://localhost:8000")
+    return urls
+
 # OAuth Authentication Handler
 def fetch_access_token(username: str = DEFAULT_USERNAME, password: str = DEFAULT_PASSWORD) -> str:
-    try:
-        url = f"{BACKEND_URL}/api/auth/token"
-        with httpx.Client(timeout=10.0) as client:
-            res = client.post(url, data={"username": username, "password": password})
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("access_token", "")
-            else:
-                logger.error(f"Authentication failed: {res.status_code} {res.text}")
-    except Exception as e:
-        logger.error(f"Could not connect to backend auth endpoint: {e}")
+    for base_url in get_target_backend_urls():
+        try:
+            url = f"{base_url}/api/auth/token"
+            with httpx.Client(timeout=10.0) as client:
+                res = client.post(url, data={"username": username, "password": password})
+                if res.status_code == 200:
+                    data = res.json()
+                    return data.get("access_token", "")
+                else:
+                    logger.error(f"Authentication failed at {base_url}: {res.status_code} {res.text}")
+        except Exception as e:
+            logger.warning(f"Could not connect to backend auth at {base_url}: {e}")
     return ""
 
 if "access_token" not in st.session_state or not st.session_state.access_token:
@@ -210,29 +219,35 @@ if user_prompt:
                     "chat_history": st.session_state.messages[:-1]
                 }
                 
-                try:
-                    url = f"{BACKEND_URL}/api/chat/stream"
-                    with httpx.Client(timeout=60.0) as client:
-                        with client.stream("POST", url, headers=headers, json=payload) as response:
-                            if response.status_code == 401:
-                                # Retry once with fresh token
-                                st.session_state.access_token = fetch_access_token()
-                                headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
-                                with client.stream("POST", url, headers=headers, json=payload) as retry_res:
-                                    for line in retry_res.iter_raw():
+                last_exception = None
+                for base_url in get_target_backend_urls():
+                    try:
+                        url = f"{base_url}/api/chat/stream"
+                        with httpx.Client(timeout=60.0) as client:
+                            with client.stream("POST", url, headers=headers, json=payload) as response:
+                                if response.status_code == 401:
+                                    st.session_state.access_token = fetch_access_token()
+                                    headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
+                                    with client.stream("POST", url, headers=headers, json=payload) as retry_res:
+                                        for line in retry_res.iter_raw():
+                                            if line:
+                                                yield line.decode("utf-8")
+                                    return
+                                else:
+                                    for line in response.iter_raw():
                                         if line:
                                             yield line.decode("utf-8")
-                            else:
-                                for line in response.iter_raw():
-                                    if line:
-                                        yield line.decode("utf-8")
-                except Exception as e:
-                    logger.error(f"Backend streaming error: {e}")
-                    err_msg = str(e)
-                    if "Name or service not known" in err_msg or "Errno -2" in err_msg:
-                        yield f"Cephalon Ordis communication link interrupted: Could not resolve backend server at '{BACKEND_URL}'.\n\n💡 **Cloud Deployment Tip**: Please set the `BACKEND_URL` environment variable in your Render Dashboard settings to your deployed FastAPI backend URL (e.g. `https://ordis-backend.onrender.com`)."
-                    else:
-                        yield f"Cephalon Ordis communication link interrupted: {e}"
+                                    return
+                    except Exception as e:
+                        last_exception = e
+                        logger.warning(f"Failed streaming from backend at {base_url}: {e}")
+
+                logger.error(f"Backend streaming error: {last_exception}")
+                err_msg = str(last_exception)
+                if "Name or service not known" in err_msg or "Errno -2" in err_msg:
+                    yield f"Cephalon Ordis communication link interrupted: Could not resolve backend server at '{BACKEND_URL}'.\n\n💡 **Cloud Deployment Tip**: Please set the `BACKEND_URL` environment variable in your Render Dashboard settings to your deployed FastAPI backend URL (e.g. `https://ordis-backend.onrender.com`)."
+                else:
+                    yield f"Cephalon Ordis communication link interrupted: {last_exception}"
 
             with st.spinner("Searching Codex databases..."):
                 response_text = st.write_stream(stream_from_backend())
