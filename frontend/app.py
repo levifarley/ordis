@@ -145,10 +145,10 @@ def render_copy_button(text: str, element_id: str):
     st.components.v1.html(html_code, height=20)
 
 def get_target_backend_urls() -> List[str]:
-    candidates = []
-    if BACKEND_URL:
-        candidates.append(BACKEND_URL)
-    for fallback in ["http://backend:8000", "http://127.0.0.1:8000", "http://localhost:8000"]:
+    candidates = ["http://127.0.0.1:8000", "http://localhost:8000"]
+    if BACKEND_URL and BACKEND_URL not in candidates:
+        candidates.insert(0, BACKEND_URL)
+    for fallback in ["http://backend:8000"]:
         if fallback not in candidates:
             candidates.append(fallback)
     return candidates
@@ -223,17 +223,17 @@ def render_initialization_screen():
     # 1. Check Backend Connectivity (0 -> 25%)
     update_status(10, "⚡ Establishing connection to ORDIS Backend Core...", "Connecting to backend microservice...")
     health_ok, health_data = False, {}
-    max_retries = 6
+    max_retries = 25
     for attempt in range(1, max_retries + 1):
         health_ok, health_data = check_backend_health()
         if health_ok:
             break
         update_status(
-            min(10 + attempt * 2, 24),
-            f"⚡ Waiting for backend service (attempt {attempt}/{max_retries})...",
-            f"Attempt {attempt}: Waiting for backend HTTP endpoint to respond..."
+            min(10 + attempt, 24),
+            f"⚡ Waiting for backend service to initialize (attempt {attempt}/{max_retries})...",
+            f"Attempt {attempt}/{max_retries}: Waiting for backend HTTP endpoint to respond..."
         )
-        time.sleep(0.5)
+        time.sleep(1.0)
 
     if health_ok:
         update_status(25, "✓ Connection to ORDIS Backend Core established.", "Backend Core connection established.")
@@ -364,8 +364,7 @@ if user_prompt:
                 logger.error(f"Backend streaming error: {last_exception}")
                 yield "Cephalon Ordis is initializing systems, please wait a minute or two and refresh the page."
 
-            with st.spinner("Searching Codex databases..."):
-                response_text = st.write_stream(stream_from_backend())
+            response_text = st.write_stream(stream_from_backend())
             
             render_copy_button(response_text, f"msg-{len(st.session_state.messages)}")
 

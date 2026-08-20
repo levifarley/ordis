@@ -13,14 +13,22 @@ if frontend_dir not in sys.path:
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+_uvicorn_thread_started = False
+
 def ensure_embedded_backend_running():
     """Starts FastAPI backend in a background thread if not already running on port 8000."""
+    global _uvicorn_thread_started
     try:
         res = httpx.get("http://127.0.0.1:8000/api/health", timeout=0.8)
         if res.status_code == 200:
             return
     except Exception:
         pass
+
+    if _uvicorn_thread_started:
+        return
+
+    _uvicorn_thread_started = True
 
     def run_uvicorn():
         try:
@@ -31,7 +39,7 @@ def ensure_embedded_backend_running():
 
     thread = threading.Thread(target=run_uvicorn, daemon=True)
     thread.start()
-    time.sleep(2.0)
+    time.sleep(1.0)
 
 ensure_embedded_backend_running()
 
