@@ -146,10 +146,11 @@ def render_copy_button(text: str, element_id: str):
 
 def get_target_backend_urls() -> List[str]:
     primary = BACKEND_URL
-    urls = [primary]
+    urls = []
     if "127.0.0.1" not in primary and "localhost" not in primary:
         urls.append("http://127.0.0.1:8000")
         urls.append("http://localhost:8000")
+    urls.append(primary)
     return urls
 
 # OAuth Authentication Handler
@@ -161,7 +162,9 @@ def fetch_access_token(username: str = DEFAULT_USERNAME, password: str = DEFAULT
                 res = client.post(url, data={"username": username, "password": password})
                 if res.status_code == 200:
                     data = res.json()
-                    return data.get("access_token", "")
+                    token = data.get("access_token", "")
+                    if token:
+                        return token
                 else:
                     logger.error(f"Authentication failed at {base_url}: {res.status_code} {res.text}")
         except Exception as e:
@@ -210,10 +213,15 @@ if user_prompt:
 
         with st.chat_message("assistant"):
             def stream_from_backend() -> Generator[str, None, None]:
-                if not st.session_state.access_token:
-                    st.session_state.access_token = fetch_access_token()
+                token = st.session_state.get("access_token")
+                if not token:
+                    token = fetch_access_token()
+                    st.session_state.access_token = token
 
-                headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
+                if not token:
+                    yield "Cephalon Ordis communication link interrupted: Authentication token unavailable. Please refresh."
+                    return
+
                 payload = {
                     "prompt": user_prompt,
                     "chat_history": st.session_state.messages[:-1]
@@ -222,22 +230,29 @@ if user_prompt:
                 last_exception = None
                 for base_url in get_target_backend_urls():
                     try:
+                        headers = {"Authorization": f"Bearer {token}"}
                         url = f"{base_url}/api/chat/stream"
                         with httpx.Client(timeout=60.0) as client:
                             with client.stream("POST", url, headers=headers, json=payload) as response:
-                                if response.status_code == 401:
-                                    st.session_state.access_token = fetch_access_token()
-                                    headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
-                                    with client.stream("POST", url, headers=headers, json=payload) as retry_res:
-                                        for line in retry_res.iter_raw():
-                                            if line:
-                                                yield line.decode("utf-8")
-                                    return
-                                else:
+                                if response.status_code == 200:
+                                    has_content = False
                                     for line in response.iter_raw():
                                         if line:
+                                            has_content = True
                                             yield line.decode("utf-8")
-                                    return
+                                    if has_content:
+                                        return
+                                elif response.status_code == 401:
+                                    token = fetch_access_token()
+                                    st.session_state.access_token = token
+                                    if token:
+                                        headers = {"Authorization": f"Bearer {token}"}
+                                        with client.stream("POST", url, headers=headers, json=payload) as retry_res:
+                                            if retry_res.status_code == 200:
+                                                for line in retry_res.iter_raw():
+                                                    if line:
+                                                        yield line.decode("utf-8")
+                                                return
                     except Exception as e:
                         last_exception = e
                         logger.warning(f"Failed streaming from backend at {base_url}: {e}")
