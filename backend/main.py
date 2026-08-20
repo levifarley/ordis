@@ -77,12 +77,16 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     ollama_available = False
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            res = await client.get(f"{settings.OLLAMA_HOST}/api/tags")
-            ollama_available = (res.status_code == 200)
-    except Exception:
-        ollama_available = False
+    hosts_to_try = [settings.OLLAMA_HOST, "http://localhost:11434", "http://127.0.0.1:11434"]
+    for host in hosts_to_try:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                res = await client.get(f"{host}/api/tags")
+                if res.status_code == 200:
+                    ollama_available = True
+                    break
+        except Exception:
+            continue
 
     chroma_available = False
     try:

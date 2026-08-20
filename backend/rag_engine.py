@@ -30,25 +30,32 @@ class OllamaProvider(BaseLLMProvider):
         self.model = settings.OLLAMA_MODEL
         self.embedding_model = settings.EMBEDDING_MODEL
 
+    def _get_host_candidates(self) -> List[str]:
+        candidates = [self.host]
+        for fallback in ["http://localhost:11434", "http://127.0.0.1:11434"]:
+            if fallback not in candidates:
+                candidates.append(fallback)
+        return candidates
+
     def get_embedding(self, text: str) -> List[float]:
-        url = f"{self.host}/api/embeddings"
         payload = {"model": self.embedding_model, "prompt": text}
-        try:
-            with httpx.Client(timeout=15.0) as client:
-                res = client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    if "embedding" in data and data["embedding"]:
-                        return data["embedding"]
-                    elif "embeddings" in data and data["embeddings"]:
-                        return data["embeddings"][0]
-        except Exception as e:
-            logger.error(f"Ollama embedding error: {e}")
+        for host in self._get_host_candidates():
+            url = f"{host}/api/embeddings"
+            try:
+                with httpx.Client(timeout=15.0) as client:
+                    res = client.post(url, json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if "embedding" in data and data["embedding"]:
+                            return data["embedding"]
+                        elif "embeddings" in data and data["embeddings"]:
+                            return data["embeddings"][0]
+            except Exception as e:
+                logger.warning(f"Ollama embedding error at {host}: {e}")
         # Return fallback zeros if Ollama model is initializing
         return [0.0] * 768
 
     def generate_stream(self, prompt: str) -> Generator[str, None, None]:
-        url = f"{self.host}/api/generate"
         payload = {
             "model": self.model,
             "system": settings.SYSTEM_INSTRUCTIONS,
@@ -62,18 +69,31 @@ class OllamaProvider(BaseLLMProvider):
                 "num_predict": settings.LLM_NUM_PREDICT,
             }
         }
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                with client.stream("POST", url, json=payload) as response:
-                    for line in response.iter_lines():
-                        if line:
-                            data = json.loads(line)
-                            token = data.get("response", "")
-                            if token:
-                                yield token
-        except Exception as e:
-            logger.error(f"Ollama generation stream error: {e}")
-            yield f"Cephalon Ordis is experiencing sub-system reconnection: {e}"
+        last_exception = None
+        for host in self._get_host_candidates():
+            url = f"{host}/api/generate"
+            try:
+                with httpx.Client(timeout=60.0) as client:
+                    with client.stream("POST", url, json=payload) as response:
+                        status_code = getattr(response, "status_code", 200)
+                        if status_code == 200:
+                            has_tokens = False
+                            for line in response.iter_lines():
+                                if line:
+                                    data = json.loads(line)
+                                    token = data.get("response", "")
+                                    if token:
+                                        has_tokens = True
+                                        yield token
+                            if has_tokens:
+                                return
+            except Exception as e:
+                logger.warning(f"Ollama generation stream error at {host}: {e}")
+                last_exception = e
+
+        logger.error(f"All Ollama host candidates failed. Last error: {last_exception}")
+        yield f"Cephalon Ordis is experiencing sub-system reconnection: {last_exception}"
+
 
 
 def get_llm_provider() -> BaseLLMProvider:

@@ -38,6 +38,7 @@ def test_ollama_provider_generate_stream():
     provider = OllamaProvider()
 
     class MockStreamResponse:
+        status_code = 200
         def __enter__(self):
             return self
         def __exit__(self, exc_type, exc_val, exc_tb):
@@ -60,6 +61,33 @@ def test_ollama_provider_generate_stream():
     with patch("httpx.Client", return_value=MockClient()):
         tokens = list(provider.generate_stream("Hello"))
         assert "".join(tokens) == "Greetings, Operator!"
+
+
+def test_ollama_provider_host_fallback():
+    provider = OllamaProvider()
+
+    class MockStreamResponse:
+        status_code = 200
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+        def iter_lines(self):
+            return ['{"response": "Fallback success!"}', '']
+
+    class MockClientWithFallback:
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+        def stream(self, method, url, json):
+            if "ollama:11434" in url:
+                raise Exception("[Errno -2] Name or service not known")
+            return MockStreamResponse()
+
+    with patch("httpx.Client", return_value=MockClientWithFallback()):
+        tokens = list(provider.generate_stream("Hello"))
+        assert "".join(tokens) == "Fallback success!"
 
 
 def test_semantic_cache_operations():

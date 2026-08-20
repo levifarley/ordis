@@ -29,19 +29,32 @@ class BaseVectorStore(ABC):
 class ChromaVectorStore(BaseVectorStore):
     """ChromaDB implementation of BaseVectorStore."""
     def __init__(self):
-        try:
-            if "://" in settings.CHROMA_HOST:
-                # Remove protocol scheme if passed
-                host = settings.CHROMA_HOST.split("://")[-1].split(":")[0]
-                port = int(settings.CHROMA_HOST.split(":")[-1]) if ":" in settings.CHROMA_HOST.split("://")[-1] else 8000
-            else:
-                host = settings.CHROMA_HOST
-                port = settings.CHROMA_PORT
-                
-            self.client = chromadb.HttpClient(host=host, port=port)
-            logger.info(f"Connected to ChromaDB HTTP server at {host}:{port}")
-        except Exception as e:
-            logger.warning(f"Could not connect to ChromaDB HTTP server ({e}). Falling back to local persistent Chroma client.")
+        hosts_to_try = []
+        if settings.CHROMA_HOST:
+            hosts_to_try.append(settings.CHROMA_HOST)
+        for fallback in ["http://chromadb:8000", "http://localhost:8002", "http://localhost:8000", "http://127.0.0.1:8000"]:
+            if fallback not in hosts_to_try:
+                hosts_to_try.append(fallback)
+
+        connected = False
+        for host_url in hosts_to_try:
+            try:
+                if "://" in host_url:
+                    host = host_url.split("://")[-1].split(":")[0]
+                    port = int(host_url.split(":")[-1]) if ":" in host_url.split("://")[-1] else 8000
+                else:
+                    host = host_url
+                    port = settings.CHROMA_PORT
+                self.client = chromadb.HttpClient(host=host, port=port)
+                self.client.heartbeat()
+                logger.info(f"Connected to ChromaDB HTTP server at {host}:{port}")
+                connected = True
+                break
+            except Exception:
+                continue
+
+        if not connected:
+            logger.warning("Could not connect to ChromaDB HTTP server. Falling back to local persistent Chroma client.")
             self.client = chromadb.PersistentClient(path="./chroma_db_storage")
 
         self.collection = self.client.get_or_create_collection(

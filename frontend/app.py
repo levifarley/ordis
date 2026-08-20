@@ -145,9 +145,12 @@ def render_copy_button(text: str, element_id: str):
     st.components.v1.html(html_code, height=20)
 
 def get_target_backend_urls() -> List[str]:
-    candidates = ["http://127.0.0.1:8000", "http://localhost:8000"]
-    if BACKEND_URL and BACKEND_URL not in candidates and "backend:8000" not in BACKEND_URL and "backend" not in BACKEND_URL:
+    candidates = []
+    if BACKEND_URL:
         candidates.append(BACKEND_URL)
+    for fallback in ["http://backend:8000", "http://127.0.0.1:8000", "http://localhost:8000"]:
+        if fallback not in candidates:
+            candidates.append(fallback)
     return candidates
 
 # OAuth Authentication Handler
