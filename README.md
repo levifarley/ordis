@@ -1,5 +1,7 @@
 # ORDIS: Warframe Information & Combat Guide
 
+![ORDIS Cephalon Interface](assets/screenshot.png)
+
 ORDIS is a fully local, containerized microservice Retrieval-Augmented Generation (RAG) system built in Python. Designed as an interactive assistant for the Warframe universe, ORDIS provides an immersive dark HUD chat interface powered by FastAPI, Streamlit, ChromaDB, Model Context Protocol (MCP) servers, and local Ollama (Gemma) model inference.
 
 ---
