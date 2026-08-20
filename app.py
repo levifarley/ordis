@@ -15,22 +15,23 @@ if root_dir not in sys.path:
 
 def ensure_embedded_backend_running():
     """Starts FastAPI backend in a background thread if not already running on port 8000."""
-    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
-    if "localhost" in backend_url or "127.0.0.1" in backend_url:
+    try:
+        res = httpx.get("http://127.0.0.1:8000/api/health", timeout=0.8)
+        if res.status_code == 200:
+            return
+    except Exception:
+        pass
+
+    def run_uvicorn():
         try:
-            res = httpx.get("http://127.0.0.1:8000/api/health", timeout=0.8)
-            if res.status_code == 200:
-                return
-        except Exception:
-            pass
-
-        def run_uvicorn():
             import uvicorn
-            uvicorn.run("backend.main:app", host="127.0.0.1", port=8000, log_level="warning")
+            uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, log_level="info")
+        except Exception as e:
+            print(f"Embedded uvicorn start exception: {e}", flush=True)
 
-        thread = threading.Thread(target=run_uvicorn, daemon=True)
-        thread.start()
-        time.sleep(1.5)
+    thread = threading.Thread(target=run_uvicorn, daemon=True)
+    thread.start()
+    time.sleep(2.0)
 
 ensure_embedded_backend_running()
 
