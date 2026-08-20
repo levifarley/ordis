@@ -23,6 +23,7 @@ secrets.py
 Thumbs.db
 
 # Local database, cache, and telemetry logs
+chroma_db_storage/
 crawler_cache.json
 local_telemetry.jsonl
 scheduler_status.json

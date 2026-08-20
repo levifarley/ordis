@@ -1,0 +1,12 @@
+# Render Deployment Blueprint (render.yaml)
+services:
+  - type: web
+    name: ordis-frontend
+    runtime: python
+    buildCommand: pip install -r requirements-frontend.txt
+    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: BACKEND_URL
+        sync: false
+      - key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+        value: "false"

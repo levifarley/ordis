@@ -30,12 +30,13 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"], [data-testid="stHeader"], [data-testid="stBottom"], [data-testid="stBottomBlockContainer"], .stApp, [data-testid="stSidebar"] {
-        background-color: #010207 !important;
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"], [data-testid="stHeader"], [data-testid="stBottom"], [data-testid="stBottom"] *, [data-testid="stBottomBlockContainer"], [data-testid="stBottomBlockContainer"] *, div[class*="stBottom"], div[class*="stBottom"] *, footer, .stApp, [data-testid="stSidebar"] {
+        background-color: #04050a !important;
+        background: #04050a !important;
         color: #e0e6ed;
     }
     [data-testid="stChatMessage"] {
-        background-color: #010207 !important;
+        background-color: #04050a !important;
         border: 1px solid rgba(45, 212, 191, 0.15) !important;
         border-radius: 8px !important;
         padding: 16px 20px !important;
@@ -48,7 +49,7 @@ st.markdown(
     .stChatInputContainer,
     div[data-testid="stChatInput"] > div {
         border-color: rgba(45, 212, 191, 0.25) !important;
-        background-color: #010207 !important;
+        background-color: #04050a !important;
         transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
     }
     .stChatInputContainer:focus-within,
@@ -67,7 +68,7 @@ st.markdown(
     .stChatInputContainer textarea:focus,
     [data-testid="stChatInputTextArea"],
     [data-testid="stChatInputTextArea"]:focus {
-        background-color: #010207 !important;
+        background-color: #04050a !important;
         color: #e0e6ed !important;
         border: none !important;
         outline: none !important;
