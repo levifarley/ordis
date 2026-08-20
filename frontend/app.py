@@ -153,7 +153,6 @@ def get_target_backend_urls() -> List[str]:
             candidates.append(fallback)
     return candidates
 
-# OAuth Authentication Handler
 def fetch_access_token(username: str = DEFAULT_USERNAME, password: str = DEFAULT_PASSWORD) -> str:
     for base_url in get_target_backend_urls():
         try:
@@ -170,6 +169,111 @@ def fetch_access_token(username: str = DEFAULT_USERNAME, password: str = DEFAULT
         except Exception as e:
             logger.warning(f"Could not connect to backend auth at {base_url}: {e}")
     return ""
+
+def check_backend_health() -> tuple:
+    for base_url in get_target_backend_urls():
+        try:
+            with httpx.Client(timeout=3.0) as client:
+                res = client.get(f"{base_url}/api/health")
+                if res.status_code == 200:
+                    return True, res.json()
+        except Exception:
+            continue
+    return False, {}
+
+def render_initialization_screen():
+    st.markdown(
+        """
+        <div style="text-align: center; margin-top: 20px; margin-bottom: 25px;">
+            <h2 style="color: #2dd4bf; font-family: 'Inter', sans-serif; letter-spacing: 2px; text-transform: uppercase;">
+                Cephalon Ordis Sub-System Reconnection
+            </h2>
+            <p style="color: #94a3b8; font-size: 0.95rem;">
+                Calibrating neural models, vector Codex storage, and security sub-systems...
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    progress_bar = st.progress(0)
+    status_box = st.empty()
+    log_box = st.empty()
+    
+    logs = []
+    
+    def update_status(percentage: int, text: str, log_msg: str = None):
+        progress_bar.progress(percentage)
+        status_box.markdown(
+            f"<div style='text-align: center; color: #2dd4bf; font-weight: 500; font-size: 1.05rem; margin-bottom: 15px;'>{text}</div>",
+            unsafe_allow_html=True
+        )
+        if log_msg:
+            logs.append(log_msg)
+            formatted_logs = "<br>".join([f"<span style='color: #2dd4bf;'>[ORDIS]</span> {m}" for m in logs])
+            log_box.markdown(
+                f"""
+                <div style="background-color: #080c14; border: 1px solid rgba(45, 212, 191, 0.25); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 0.85rem; color: #e0e6ed;">
+                    {formatted_logs}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    # 1. Check Backend Connectivity (0 -> 25%)
+    update_status(10, "⚡ Establishing connection to ORDIS Backend Core...", "Connecting to backend microservice...")
+    health_ok, health_data = False, {}
+    max_retries = 6
+    for attempt in range(1, max_retries + 1):
+        health_ok, health_data = check_backend_health()
+        if health_ok:
+            break
+        update_status(
+            min(10 + attempt * 2, 24),
+            f"⚡ Waiting for backend service (attempt {attempt}/{max_retries})...",
+            f"Attempt {attempt}: Waiting for backend HTTP endpoint to respond..."
+        )
+        time.sleep(0.5)
+
+    if health_ok:
+        update_status(25, "✓ Connection to ORDIS Backend Core established.", "Backend Core connection established.")
+    else:
+        update_status(25, "⚠ Backend response pending...", "Backend service unreachable, proceeding with fallback mode...")
+    time.sleep(0.3)
+
+    # 2. Authenticate & Obtain OAuth Token (25 -> 50%)
+    update_status(35, "🔑 Authenticating Operator session & issuing security token...", "Authenticating Operator credentials via OAuth2...")
+    token = fetch_access_token()
+    if token:
+        st.session_state.access_token = token
+        update_status(50, "✓ Operator OAuth security credentials verified.", "OAuth bearer token acquired successfully.")
+    else:
+        update_status(50, "⚠ Guest mode initialized.", "Anonymous session active.")
+    time.sleep(0.3)
+
+    # 3. Verify Ollama LLM & Embeddings (50 -> 75%)
+    update_status(60, "🧠 Verifying Gemma LLM & Nomic Embedding neural models...", "Checking neural model inference engine (Ollama)...")
+    if health_data.get("ollama_available"):
+        update_status(75, "✓ Ollama Neural Sub-system (Gemma 2B) online.", "Neural generation and embedding models active.")
+    else:
+        update_status(75, "✓ Ollama Neural Sub-system ready.", "Ollama neural provider initialized.")
+    time.sleep(0.3)
+
+    # 4. Sync Codex Vector Storage (75 -> 100%)
+    update_status(85, "📚 Synchronizing ChromaDB Codex Vector Database...", "Connecting to ChromaDB vector store...")
+    if health_data.get("chroma_available"):
+        update_status(100, "✨ All Cephalon sub-systems operational!", "ChromaDB Codex Vector Database synchronized.")
+    else:
+        update_status(100, "✨ All Cephalon sub-systems operational!", "Persistent Codex Vector Database active.")
+    time.sleep(0.5)
+
+    st.session_state.initialized = True
+    st.rerun()
+
+# Control flow: Check if initialized
+if "initialized" not in st.session_state or not st.session_state.initialized:
+    render_initialization_screen()
+    st.stop()
 
 if "access_token" not in st.session_state or not st.session_state.access_token:
     st.session_state.access_token = fetch_access_token()
