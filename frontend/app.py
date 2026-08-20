@@ -4,7 +4,7 @@ import sys
 import time
 import logging
 import base64
-from typing import Generator
+from typing import Generator, List
 import streamlit as st
 import httpx
 
