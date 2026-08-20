@@ -1,6 +1,6 @@
 import os
 import sys
-import threading
+import subprocess
 import time
 import httpx
 
@@ -13,11 +13,11 @@ if frontend_dir not in sys.path:
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-_uvicorn_thread_started = False
+_backend_process = None
 
 def ensure_embedded_backend_running():
-    """Starts FastAPI backend in a background thread if not already running on port 8000."""
-    global _uvicorn_thread_started
+    """Starts FastAPI backend in a background subprocess if not already running on port 8000."""
+    global _backend_process
     try:
         res = httpx.get("http://127.0.0.1:8000/api/health", timeout=0.8)
         if res.status_code == 200:
@@ -25,21 +25,21 @@ def ensure_embedded_backend_running():
     except Exception:
         pass
 
-    if _uvicorn_thread_started:
+    if _backend_process is not None and _backend_process.poll() is None:
         return
 
-    _uvicorn_thread_started = True
+    env = os.environ.copy()
+    env["PYTHONPATH"] = root_dir
 
-    def run_uvicorn():
-        try:
-            import uvicorn
-            uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, log_level="info")
-        except Exception as e:
-            print(f"Embedded uvicorn start exception: {e}", flush=True)
-
-    thread = threading.Thread(target=run_uvicorn, daemon=True)
-    thread.start()
-    time.sleep(1.0)
+    try:
+        _backend_process = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"],
+            cwd=root_dir,
+            env=env
+        )
+        time.sleep(1.5)
+    except Exception as e:
+        print(f"Failed to start embedded backend process: {e}", flush=True)
 
 ensure_embedded_backend_running()
 

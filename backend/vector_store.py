@@ -32,7 +32,7 @@ class ChromaVectorStore(BaseVectorStore):
         hosts_to_try = []
         if settings.CHROMA_HOST:
             hosts_to_try.append(settings.CHROMA_HOST)
-        for fallback in ["http://chromadb:8000", "http://localhost:8002", "http://localhost:8000", "http://127.0.0.1:8000"]:
+        for fallback in ["http://chromadb:8000", "http://localhost:8002", "http://127.0.0.1:8002"]:
             if fallback not in hosts_to_try:
                 hosts_to_try.append(fallback)
 
