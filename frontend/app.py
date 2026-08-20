@@ -145,13 +145,10 @@ def render_copy_button(text: str, element_id: str):
     st.components.v1.html(html_code, height=20)
 
 def get_target_backend_urls() -> List[str]:
-    primary = BACKEND_URL
-    urls = []
-    if "127.0.0.1" not in primary and "localhost" not in primary:
-        urls.append("http://127.0.0.1:8000")
-        urls.append("http://localhost:8000")
-    urls.append(primary)
-    return urls
+    candidates = ["http://127.0.0.1:8000", "http://localhost:8000"]
+    if BACKEND_URL and BACKEND_URL not in candidates and "backend:8000" not in BACKEND_URL and "backend" not in BACKEND_URL:
+        candidates.append(BACKEND_URL)
+    return candidates
 
 # OAuth Authentication Handler
 def fetch_access_token(username: str = DEFAULT_USERNAME, password: str = DEFAULT_PASSWORD) -> str:
@@ -219,7 +216,7 @@ if user_prompt:
                     st.session_state.access_token = token
 
                 if not token:
-                    yield "Cephalon Ordis communication link interrupted: Authentication token unavailable. Please refresh."
+                    yield "Cephalon Ordis is initializing systems, please wait a minute or two and refresh the page."
                     return
 
                 payload = {
@@ -258,11 +255,7 @@ if user_prompt:
                         logger.warning(f"Failed streaming from backend at {base_url}: {e}")
 
                 logger.error(f"Backend streaming error: {last_exception}")
-                err_msg = str(last_exception)
-                if "Name or service not known" in err_msg or "Errno -2" in err_msg:
-                    yield f"Cephalon Ordis communication link interrupted: Could not resolve backend server at '{BACKEND_URL}'.\n\n💡 **Cloud Deployment Tip**: Please set the `BACKEND_URL` environment variable in your Render Dashboard settings to your deployed FastAPI backend URL (e.g. `https://ordis-backend.onrender.com`)."
-                else:
-                    yield f"Cephalon Ordis communication link interrupted: {last_exception}"
+                yield "Cephalon Ordis is initializing systems, please wait a minute or two and refresh the page."
 
             with st.spinner("Searching Codex databases..."):
                 response_text = st.write_stream(stream_from_backend())
