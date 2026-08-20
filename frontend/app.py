@@ -228,7 +228,11 @@ if user_prompt:
                                         yield line.decode("utf-8")
                 except Exception as e:
                     logger.error(f"Backend streaming error: {e}")
-                    yield f"Cephalon Ordis communication link interrupted: {e}"
+                    err_msg = str(e)
+                    if "Name or service not known" in err_msg or "Errno -2" in err_msg:
+                        yield f"Cephalon Ordis communication link interrupted: Could not resolve backend server at '{BACKEND_URL}'.\n\n💡 **Cloud Deployment Tip**: Please set the `BACKEND_URL` environment variable in your Render Dashboard settings to your deployed FastAPI backend URL (e.g. `https://ordis-backend.onrender.com`)."
+                    else:
+                        yield f"Cephalon Ordis communication link interrupted: {e}"
 
             with st.spinner("Searching Codex databases..."):
                 response_text = st.write_stream(stream_from_backend())
