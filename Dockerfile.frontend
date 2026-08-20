@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+ENV STREAMLIT_SERVER_HEADLESS=true
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-frontend.txt .
+RUN pip install --no-cache-dir -r requirements-frontend.txt
+
+COPY frontend ./frontend
+
+# Secure non-root user
+RUN groupadd -r appuser && useradd -m -r -g appuser -s /bin/false appuser
+RUN chown -R appuser:appuser /app /home/appuser
+USER appuser
+
+EXPOSE 8080
+
+ENTRYPOINT ["streamlit", "run", "frontend/app.py", "--server.port=8080", "--server.address=0.0.0.0", "--server.enableCORS=false", "--server.enableXsrfProtection=false"]

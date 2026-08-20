@@ -1,176 +1,147 @@
-<p align="center">
-  <img width="886" height="1058" alt="image" src="https://github.com/user-attachments/assets/17178018-bccb-476e-868e-1c61ab54e767" />
-</p>
-
 # ORDIS: Warframe Information & Combat Guide
 
-ORDIS is a zero-cost, highly optimized, and modular Retrieval-Augmented Generation (RAG) system built in Python. Designed as an interactive helper for the Warframe universe, ORDIS utilizes Streamlit for a dark HUD chat dashboard, Google Firestore for native Vector Search, and Gemini 2.5 Flash for grounded responses delivered in the iconic tone of Cephalon Ordis.
+ORDIS is a fully local, containerized microservice Retrieval-Augmented Generation (RAG) system built in Python. Designed as an interactive assistant for the Warframe universe, ORDIS provides an immersive dark HUD chat interface powered by FastAPI, Streamlit, ChromaDB, Model Context Protocol (MCP) servers, and local Ollama (Gemma) model inference.
 
 ---
 
-## 🏗️ Codebase Architecture & Components
+## 🌟 Key Features
 
-The application is structured modularly to separate scraping, caching, vector indexing, inference, and coordination:
-
-1. **[app.py](app.py)**
-   - Implements a responsive, dark-themed Streamlit user interface styled to emulate a Cephalon HUD.
-   - Enforces user-level safeguards (cooldown timers, prompt character limits, and daily query lockdowns).
-   - Dynamically loads and renders the wide Cephalon core branding banner [ordis_logo.png](ordis_logo.png).
-
-2. **[rag_engine.py](rag_engine.py)**
-   - Manages the inference pipeline using the Google GenAI SDK.
-   - Cleanses queries, rephrases inputs with spelling corrections using typo condensation (`thinking_budget=0` to skip thinking tokens and preserve limits), fetches semantic embeddings, and builds grounding context.
-   - Uses the Vertex AI SDK to track prompt metrics, grounding document overlaps, and latency under Vertex AI Experiments.
-   - Asynchronously logs query transactions to the local JSONL telemetry file.
-
-3. **[firestore_db.py](firestore_db.py)**
-   - Interfaces with Cloud Firestore using the default database instance.
-   - Implements native vector search queries using `find_nearest` and `DistanceMeasure.COSINE`.
-   - Protects resource consumption by running multi-instance-safe transactions to enforce daily query counts.
-
-4. **[cache.py](cache.py)**
-   - Establishes a thread-safe, in-memory **Semantic Cache** using NumPy array math.
-   - Bypasses Gemini API inference entirely for repeated or highly similar queries ($\ge 92\%$ cosine similarity), returning answers in milliseconds with $0 API cost.
-   - Implements a Least Recently Used (LRU) cache eviction policy capped at 1,000 entries.
-
-5. **[ingest.py](ingest.py)**
-   - Automatically crawls and parses game entities from the Warframe community datasets (WFCD), Warframe Fandom Wiki, and `warframe.market` price statistics.
-   - Optimizes network calls with conditional HTTP `If-None-Match`/`If-Modified-Since` checks to receive `304 Not Modified` and skip downloading unchanged feeds.
-   - Performs batch embedding requests (15 documents per request) via Vertex AI to prevent `429 ResourceExhausted` rate limits.
-   - Syncs trade market prices as metadata fields to allow rapid price updates without paying for embedding recalculations.
-
-6. **[scheduler.py](scheduler.py)**
-   - A lightweight cron-like background daemon that triggers the full data ingestion and price sync loop every 24 hours.
-   - Logs execution metrics and status directly to [scheduler_status.json](scheduler_status.json).
-
-7. **[watch_server.py](watch_server.py)**
-   - Coordinates multi-process execution. It monitors codebase directories and reboots both the Streamlit web server and the Scheduler background daemon upon file modifications.
-
-8. **[config.py](config.py)**
-   - Houses global configurations, model definitions (`text-embedding-004` and `gemini-2.5-flash`), threshold constants, and pipeline token bounds.
-
-9. **[Dockerfile](Dockerfile)**
-   - A production-grade container configuration that runs Python 3.11-slim, exposes port 8080, and executes under a secure, non-root `appuser` for deployment on Cloud Run.
-
-10. **[.dockerignore](.dockerignore)**
-    - Excludes virtual environments (`.venv`), Python byte caches, and temporary log/status files from the Docker context to optimize image build times and sizes.
+- **100% Local & Privacy-Focused**: Zero mandatory remote cloud dependencies or API keys required. Runs completely on local hardware.
+- **Grounded RAG Pipeline**: Combines vector similarity search (ChromaDB) with live Warframe Codex datasets.
+- **Model Context Protocol (MCP)**: Pluggable MCP cluster fetching real-time items feeds, Fandom Wiki guides, warframe.market trade statistics, and community builds.
+- **Sub-Millisecond Semantic Caching**: High-performance in-memory LRU cache storing vector embeddings to serve sub-millisecond hits for identical or similar queries.
+- **Enterprise-Grade Security & Rate Limiting**: Protected by OAuth2 JWT Bearer tokens, prompt length limits, security cooldowns, and HTML sanitization hooks.
+- **Decoupled Microservice Stack**: Fully containerized via Docker Compose with lightweight non-root images.
 
 ---
 
-## 📈 System Flow & Architecture
+## 🏗️ Architecture & Component Overview
 
-```mermaid
-graph TD
-    subgraph Daily Ingestion Pipeline
-        S[scheduler.py] -->|Trigger Ingestion| I[ingest.py]
-        I -->|Conditional GET 304 Check| WFCD[WFCD Community API]
-        I -->|Scrape guide sections| Wiki[Warframe Fandom Wiki]
-        I -->|Fetch pricing metrics| WM[warframe.market API]
-        I -->|Batch size 15| Embed[text-embedding-004]
-        I -->|Set merge=True| DB[(Firestore ordis_knowledge)]
-    end
-
-    subgraph Grounded Chat Interface
-        U[Streamlit App app.py] -->|Sanitized User Query| RE[rag_engine.py]
-        RE -->|Vector Query Lookup| SC[cache.py LRU Semantic Cache]
-        SC -->|Miss| DB
-        RE -->|Generate response| LLM[gemini-2.5-flash]
-        U -->|Async Thread Logger| TL[local_telemetry.jsonl]
-    end
+```
+ordis/
+├── docker-compose.yml                  # Orchestrates microservices (Ollama, Chroma, MCP, Backend, Frontend)
+├── Dockerfile.backend                  # Container build for FastAPI backend (Python 3.11-slim, non-root)
+├── Dockerfile.frontend                 # Container build for Streamlit frontend (Python 3.11-slim, non-root)
+├── backend/
+│   ├── main.py                         # FastAPI REST API & SSE streaming chat endpoints
+│   ├── config.py                       # Centralized settings & environment configurations
+│   ├── auth.py                         # OAuth2 password flow & Bearer JWT token verification
+│   ├── rag_engine.py                   # Local RAG execution pipeline (Ollama Gemma + ChromaDB)
+│   ├── vector_store.py                 # Abstract BaseVectorStore & ChromaDB vector indexer
+│   ├── cache.py                        # In-memory Semantic LRU Cache (Cosine Similarity >= 0.92)
+│   ├── hooks.py                        # Extensible pre-prompt & post-response middleware hooks
+│   ├── telemetry.py                    # Configurable telemetry (Local JSONL default, optional GCP)
+│   ├── mcp_manager.py                  # Client manager querying connected MCP servers
+│   └── background_worker.py            # Asynchronous background worker for initial & 24h data sync
+├── mcp_servers/
+│   ├── base.py                         # Standardized MCP server protocol contract
+│   ├── wfcd_mcp.py                     # MCP Server for Warframe Community items feed
+│   ├── wiki_mcp.py                     # MCP Server for Fandom Wiki guide pages
+│   ├── market_mcp.py                   # MCP Server for warframe.market trade statistics
+│   └── builds_mcp.py                   # MCP Server for Warframe builds & gear setups
+├── frontend/
+│   ├── app.py                          # Decoupled Streamlit HUD UI calling Backend REST API
+│   ├── assets/
+│   │   └── ordis_logo.png              # Custom Cephalon core logo asset
+│   └── .streamlit/config.toml          # Telemetry opt-out & server configuration
+└── tests/                              # Comprehensive Pytest automated test suite
+    ├── test_auth.py
+    ├── test_main.py
+    ├── test_rag_engine.py
+    ├── test_vector_store.py
+    ├── test_mcp_connectors.py
+    ├── test_startup_health.py
+    ├── test_telemetry.py
+    └── test_background_worker.py
 ```
 
 ---
 
-## 🛡️ Cost-Control & Safeguard Safeguards
+## 🛡️ Security & Rate Limiting Architecture
 
-ORDIS is built to run safely in public or staging environments without risk of runaway billing:
+ORDIS implements a defense-in-depth security architecture designed for public and enterprise deployments:
 
-- **Daily Query Limit**: Capped at 300 queries per day (`MAX_DAILY_QUERIES = 300`). The counter is transactionally managed in Firestore and automatically resets at UTC midnight. When the quota is reached, the Streamlit input is visually locked and disabled.
-- **Cache-Miss Exemption**: Semantic cache hits bypass the daily usage counter increment. Users can query cached prompts indefinitely at no API cost.
-- **Ingestion Budget Guards**: Limits embedding token ingestion to `300,000` tokens per sync cycle, limits market crawls to `200` calls, and wiki fetches to `50` calls, blocking excessive API billing.
-- **User Cooldown**: Implements a session rate limit requiring 10 seconds of cooldown between consecutive inputs.
-- **Input Character Limit**: Filters and truncates queries exceeding 250 characters directly in the UI.
+1. **OAuth2 JWT Bearer Authentication**:
+   - All backend API endpoints (`/api/chat/stream`, `/api/ingest/trigger`) require valid Bearer JWT access tokens issued via `/api/auth/token`.
+2. **Chat Rate Limiting & Cooldown Protection**:
+   - **Cooldown Safeguard**: Configurable 10-second security cooldown (`COOLDOWN_SECONDS`) between user requests to prevent spam.
+   - **Prompt Length Boundary**: Hard limit of 250 characters (`PROMPT_CHARACTER_LIMIT`) to prevent context buffer overflow attacks.
+   - **Daily Quota Limit**: Maximum daily query cap (`MAX_DAILY_QUERIES=300`) per user session.
+3. **Pre-Prompt Input Sanitization**:
+   - Builtin pre-prompt event hook (`default_input_sanitizer_hook`) strips all raw HTML tags and dangerous characters before vector search or LLM invocation.
+4. **Hardened Container Security**:
+   - Both `backend` and `frontend` Docker images execute as dedicated non-root users (`appuser`).
+5. **Telemetry Privacy**:
+   - Usage stats and telemetry gathering are completely disabled in Streamlit (`STREAMLIT_BROWSER_GATHER_USAGE_STATS=false`).
+   - Inference logs are saved locally to `local_telemetry.jsonl` without transmitting data to external servers.
 
 ---
 
-## 🔍 Validation & Live Pricing Grounding
+## ⚡ Performance Optimizations
 
-1. **Trade Grounding**: When querying items (e.g., *"How much is Nikana Prime worth?"*), the vector search pulls the document, extracts the dynamically synced `market_price` metadata field (`Median Price: 70.0 platinum...`), and injects it into the LLM context.
-2. **Cephalon Personality**: The system instructions are designed to adopt Cephalon Ordis's personality—polite, stable, and helper-oriented, addressing the user as "Operator" while explaining complex underlying game mechanics (damage types, status multipliers).
-3. **No-Thinking Budget for condensor**: Query condensation is configured with `thinking_budget=0` to ensure prompt rephrasing operates instantly without consuming unnecessary thinking tokens.
+1. **Semantic LRU Caching**:
+   - Evaluates incoming query embeddings against cached prompt vectors using cosine similarity.
+   - Queries with cosine similarity $\ge 0.92$ return instantly from memory with sub-millisecond response latency, bypassing vector DB and LLM generation.
+2. **MD5 Content Hash Deduplication**:
+   - Data ingestion computes MD5 hashes for all scraped document chunks. Unchanged chunks are skipped automatically, preventing redundant embedding generation.
+3. **Asynchronous Parallel Data Collection**:
+   - MCP Manager fetches data concurrently across all registered MCP servers using Python `asyncio.gather()`.
+4. **SSE Streaming Completions**:
+   - Real-time token streaming (`StreamingResponse`) delivers immediate output feedback to the user HUD interface.
 
 ---
 
-## 🚀 Running ORDIS Locally
+## ⚙️ Environment Configuration
 
-### 1. Environment Setup
+Configuration settings are managed in `backend/config.py` and can be overridden via environment variables:
 
-Configure application credentials or developer API keys:
-```bash
-export GOOGLE_CLOUD_PROJECT="warframe-503817"
-export GEMINI_API_KEY="your-gemini-api-key-here"  # Or rely on Application Default Credentials (ADC)
-```
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `gemma2:2b` | Local LLM model identifier |
+| `EMBEDDING_MODEL` | `nomic-embed-text` | Local text embedding model |
+| `LLM_TEMPERATURE` | `0.3` | Model generation sampling temperature |
+| `LLM_REPEAT_PENALTY` | `1.18` | Token repetition penalty |
+| `CHROMA_HOST` | `http://localhost:8000` | ChromaDB vector store host |
+| `VECTOR_STORE_PROVIDER` | `chroma` | Vector database provider (`chroma`, `qdrant`) |
+| `ENABLE_GCP_TELEMETRY` | `false` | Optional GCP Vertex AI logging flag |
+| `OAUTH_SECRET_KEY` | `ordis_cephalon_secret_key` | Secret key for JWT signing |
 
-Create a virtual environment and install packages:
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+---
 
-### 2. Start the watch daemon (Recommended)
+## 🚀 Quickstart via Docker Compose
 
-To run the full suite (Streamlit application + background ingestion scheduler) with automatic hot-reloading:
-```bash
-python watch_server.py
-```
-Open your browser and navigate to `http://localhost:8080` to interact with ORDIS.
-
-### 3. Run Ingestion Manually
-
-To bypass the scheduler and trigger a direct sync:
-```bash
-python ingest.py
-```
-This parses feeds, fetches embeddings, and updates trade pricing stats immediately.
-
-### 4. Run via Docker (Containerized)
-
-To build the image and run ORDIS in a secure container mounting local Google Cloud Application Default Credentials (ADC):
-
-#### A. Standard Linux / macOS Setup
-```bash
-# 1. Ensure your local credentials file is readable
-chmod 644 ~/.config/gcloud/application_default_credentials.json
-
-# 2. Build the Docker image
-docker build -t ordis-app .
-
-# 3. Run the container
-docker run -p 8080:8080 -d \
-  --name ordis-container \
-  -v ~/.config/gcloud:/root/.config/gcloud:ro \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json \
-  -e GOOGLE_CLOUD_PROJECT="warframe-503817" \
-  ordis-app
-```
-
-#### B. WSL2 & Windows Docker Desktop Setup
-If you are running inside WSL2 and using the Windows host Docker Desktop daemon (`docker.exe`), you cannot mount paths directly from the WSL2 Linux filesystem. Follow this workaround:
+Launch the full stack with a single command:
 
 ```bash
-# 1. Create a directory on the Windows C: drive and copy the credentials file there
-mkdir -p /mnt/c/temp_ordis_credentials
-cp ~/.config/gcloud/application_default_credentials.json /mnt/c/temp_ordis_credentials/gcloud_cred.json
-
-# 2. Build the Docker image
-"/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe" build -t ordis-app .
-
-# 3. Run the container, using the native Windows path for host mounting
-"/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe" run --user root -p 8080:8080 -d \
-  --name ordis-container \
-  -v 'C:\temp_ordis_credentials\gcloud_cred.json:/app/gcloud_cred.json:ro' \
-  -e GOOGLE_APPLICATION_CREDENTIALS=/app/gcloud_cred.json \
-  -e GOOGLE_CLOUD_PROJECT="warframe-503817" \
-  ordis-app
+# Build and start containers in detached mode
+docker-compose up --build -d
 ```
+
+### Pull Ollama Models (First Run)
+```bash
+docker exec ordis-ollama ollama pull gemma2:2b
+docker exec ordis-ollama ollama pull nomic-embed-text
+```
+
+### Access Services
+- **Streamlit HUD UI**: [http://localhost:8080](http://localhost:8080)
+- **FastAPI REST API**: [http://localhost:8000](http://localhost:8000)
+- **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **MCP Servers Cluster**: [http://localhost:8001/mcp/health](http://localhost:8001/mcp/health)
+
+---
+
+## 🧪 Running Automated Tests
+
+Execute the comprehensive test suite across all microservice layers:
+
+```bash
+PYTHONPATH=. .venv/bin/pytest tests/ -v
+```
+
+---
+
+## ⚖️ Disclaimer
+
+ORDIS is a community-developed fansite tool for Warframe. Warframe and all related assets, names, and lore are intellectual property of Digital Extremes Ltd.

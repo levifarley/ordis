@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ordis-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - ordis-network
+    restart: unless-stopped
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: ordis-chromadb
+    ports:
+      - "8002:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - ordis-network
+    restart: unless-stopped
+
+  mcp-servers:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ordis-mcp-servers
+    command: uvicorn mcp_servers.base:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    networks:
+      - ordis-network
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ordis-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - CHROMA_HOST=http://chromadb:8000
+      - MCP_SERVERS_URL=http://mcp-servers:8001
+      - ENABLE_GCP_TELEMETRY=false
+      - VECTOR_STORE_PROVIDER=chroma
+      - LLM_PROVIDER=ollama
+      - LLM_TEMPERATURE=0.3
+      - LLM_REPEAT_PENALTY=1.18
+      - OAUTH_SECRET_KEY=ordis_cephalon_secret_key_change_me_in_prod
+    depends_on:
+      - ollama
+      - chromadb
+      - mcp-servers
+    networks:
+      - ordis-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ordis-frontend
+    ports:
+      - "8080:8080"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - BACKEND_API_URL=http://backend:8000
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    depends_on:
+      - backend
+    networks:
+      - ordis-network
+    restart: unless-stopped
+
+networks:
+  ordis-network:
+    driver: bridge
+
+volumes:
+  ollama_data:
+  chroma_data:

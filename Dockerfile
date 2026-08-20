@@ -19,8 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Secure container: run as non-root user
-RUN groupadd -r appuser && useradd -r -g appuser -s /bin/false appuser
-RUN chown -R appuser:appuser /app
+RUN groupadd -r appuser && useradd -m -r -g appuser -s /bin/false appuser
+RUN chown -R appuser:appuser /app /home/appuser
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 USER appuser
 
 # Expose port 8080 for Cloud Run
