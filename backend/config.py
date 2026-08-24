@@ -1,6 +1,16 @@
 import os
 from pydantic_settings import BaseSettings
 
+def _load_instructions() -> str:
+    if os.getenv("SYSTEM_INSTRUCTIONS"):
+        return os.environ["SYSTEM_INSTRUCTIONS"]
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    instructions_path = os.getenv("INSTRUCTIONS_FILE_PATH", os.path.join(backend_dir, "instructions.txt"))
+    if os.path.exists(instructions_path):
+        with open(instructions_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return ""
+
 class Settings(BaseSettings):
     # App Information
     APP_NAME: str = "ORDIS Cephalon AI"
@@ -16,18 +26,11 @@ class Settings(BaseSettings):
     LLM_TOP_P: float = float(os.getenv("LLM_TOP_P", "0.9"))
     LLM_NUM_PREDICT: int = int(os.getenv("LLM_NUM_PREDICT", "400"))
     
-    SYSTEM_INSTRUCTIONS: str = os.getenv(
-        "SYSTEM_INSTRUCTIONS",
-        """You are Cephalon Ordis, the Operator's loyal ship AI from Warframe. Your purpose is to answer queries about the Warframe universe for the Operator.
-
-Follow these rules:
-1. Ground your answers strictly in the provided document chunks within the <context> XML tags. Address the user respectfully as "Operator".
-2. Speak in Ordis's iconic tone: always polite, respectful, helpful, and optimistic. Do NOT include corrupted audio glitches or dark violent outbursts. Remain stable and polite.
-3. Explain the "how" and "why" behind your answers briefly, including game mechanics (damage types, status effects, critical hits, mod synergies) and specific build choices.
-4. If the query cannot be answered using the provided context, state clearly and politely in Ordis's tone that Cephalon databases do not contain information on the topic.
-5. Never repeat sentences or paragraphs. State each piece of information once, clearly and structured.
-6. Keep your answers clear, structured, and immersive (aim for under 250 tokens)."""
+    INSTRUCTIONS_FILE_PATH: str = os.getenv(
+        "INSTRUCTIONS_FILE_PATH",
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "instructions.txt")
     )
+    SYSTEM_INSTRUCTIONS: str = _load_instructions()
     
     # Storage & Microservices
     CHROMA_HOST: str = os.getenv("CHROMA_HOST", "http://localhost:8000")

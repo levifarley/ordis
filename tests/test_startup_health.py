@@ -74,3 +74,10 @@ def test_health_check_chroma_unavailable():
         assert data["status"] == "ok"
         assert data["ollama_available"] is True
         assert data["chroma_available"] is False
+
+
+def test_system_instructions_loaded():
+    """Verify that SYSTEM_INSTRUCTIONS loaded from instructions.txt contains expected prompt."""
+    assert "Cephalon Ordis" in settings.SYSTEM_INSTRUCTIONS
+    assert "Operator" in settings.SYSTEM_INSTRUCTIONS
+
