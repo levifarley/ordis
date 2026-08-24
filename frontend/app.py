@@ -91,7 +91,7 @@ def get_base64_logo() -> str:
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(base_dir, "assets", "ordis_logo.png"),
-        os.path.join(os.path.dirname(base_dir), "ordis_logo.png"),
+        os.path.join(os.path.dirname(base_dir), "assets", "ordis_logo.png"),
     ]
     for path in candidates:
         if os.path.exists(path):
