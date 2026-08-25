@@ -23,12 +23,19 @@ class BaseLLMProvider(ABC):
         pass
 
 
+_ollama_last_failure_time = 0.0
+
 class OllamaProvider(BaseLLMProvider):
     """Local Ollama implementation for Gemma generation & local embeddings."""
     def __init__(self):
         self.host = settings.OLLAMA_HOST
         self.model = settings.OLLAMA_MODEL
         self.embedding_model = settings.EMBEDDING_MODEL
+
+    @staticmethod
+    def reset_failure_cache():
+        global _ollama_last_failure_time
+        _ollama_last_failure_time = 0.0
 
     def _get_host_candidates(self) -> List[str]:
         candidates = [self.host]
@@ -37,12 +44,34 @@ class OllamaProvider(BaseLLMProvider):
                 candidates.append(fallback)
         return candidates
 
+    def is_available(self) -> bool:
+        global _ollama_last_failure_time
+        if time.time() - _ollama_last_failure_time < 15.0:
+            return False
+
+        timeout = httpx.Timeout(2.0, connect=1.0)
+        for host in self._get_host_candidates():
+            try:
+                with httpx.Client(timeout=timeout) as client:
+                    res = client.get(f"{host}/api/tags")
+                    if res.status_code == 200:
+                        return True
+            except Exception:
+                continue
+        _ollama_last_failure_time = time.time()
+        return False
+
     def get_embedding(self, text: str) -> List[float]:
+        global _ollama_last_failure_time
+        if time.time() - _ollama_last_failure_time < 15.0:
+            return [0.0] * 768
+
         payload = {"model": self.embedding_model, "prompt": text}
+        timeout = httpx.Timeout(5.0, connect=1.0)
         for host in self._get_host_candidates():
             url = f"{host}/api/embeddings"
             try:
-                with httpx.Client(timeout=15.0) as client:
+                with httpx.Client(timeout=timeout) as client:
                     res = client.post(url, json=payload)
                     if res.status_code == 200:
                         data = res.json()
@@ -52,10 +81,16 @@ class OllamaProvider(BaseLLMProvider):
                             return data["embeddings"][0]
             except Exception as e:
                 logger.warning(f"Ollama embedding error at {host}: {e}")
-        # Return fallback zeros if Ollama model is initializing
+
+        _ollama_last_failure_time = time.time()
         return [0.0] * 768
 
     def generate_stream(self, prompt: str) -> Generator[str, None, None]:
+        global _ollama_last_failure_time
+        if time.time() - _ollama_last_failure_time < 15.0:
+            yield "Cephalon Ordis sub-system offline: Ollama host unreachable. Please verify Ollama or GEMINI_API_KEY configuration."
+            return
+
         payload = {
             "model": self.model,
             "system": settings.SYSTEM_INSTRUCTIONS,
@@ -70,10 +105,11 @@ class OllamaProvider(BaseLLMProvider):
             }
         }
         last_exception = None
+        timeout = httpx.Timeout(30.0, connect=2.0)
         for host in self._get_host_candidates():
             url = f"{host}/api/generate"
             try:
-                with httpx.Client(timeout=60.0) as client:
+                with httpx.Client(timeout=timeout) as client:
                     with client.stream("POST", url, json=payload) as response:
                         status_code = getattr(response, "status_code", 200)
                         if status_code == 200:
@@ -91,17 +127,101 @@ class OllamaProvider(BaseLLMProvider):
                 logger.warning(f"Ollama generation stream error at {host}: {e}")
                 last_exception = e
 
+        _ollama_last_failure_time = time.time()
         logger.error(f"All Ollama host candidates failed. Last error: {last_exception}")
         yield f"Cephalon Ordis is experiencing sub-system reconnection: {last_exception}"
 
 
+class GeminiProvider(BaseLLMProvider):
+    """Google Gemini API implementation for cloud generation & embeddings via REST."""
+    def __init__(self):
+        self.api_key = settings.GEMINI_API_KEY
+        self.model = settings.GEMINI_MODEL
+        self.embedding_model = settings.GEMINI_EMBEDDING_MODEL
+
+    def get_embedding(self, text: str) -> List[float]:
+        if not self.api_key:
+            logger.warning("GEMINI_API_KEY is missing for Gemini embedding call.")
+            return [0.0] * 768
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.embedding_model}:embedContent?key={self.api_key}"
+        payload = {
+            "model": f"models/{self.embedding_model}",
+            "content": {"parts": [{"text": text}]}
+        }
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.post(url, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    values = data.get("embedding", {}).get("values", [])
+                    if values:
+                        return values
+                else:
+                    logger.error(f"Gemini embedding failed ({res.status_code}): {res.text}")
+        except Exception as e:
+            logger.error(f"Gemini embedding exception: {e}")
+        return [0.0] * 768
+
+    def generate_stream(self, prompt: str) -> Generator[str, None, None]:
+        if not self.api_key:
+            yield "Cephalon Ordis sub-system offline: GEMINI_API_KEY is not configured on server."
+            return
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:streamGenerateContent?key={self.api_key}&alt=sse"
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": settings.SYSTEM_INSTRUCTIONS}]
+            },
+            "contents": [
+                {"parts": [{"text": prompt}]}
+            ],
+            "generationConfig": {
+                "temperature": settings.LLM_TEMPERATURE
+            }
+        }
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                with client.stream("POST", url, json=payload) as response:
+                    if response.status_code != 200:
+                        yield f"Gemini API error ({response.status_code})"
+                        return
+                    for line in response.iter_lines():
+                        if line and line.startswith("data: "):
+                            json_str = line[6:].strip()
+                            if json_str == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(json_str)
+                                candidates = data.get("candidates", [])
+                                if candidates:
+                                    parts = candidates[0].get("content", {}).get("parts", [])
+                                    for p in parts:
+                                        text_chunk = p.get("text", "")
+                                        if text_chunk:
+                                            yield text_chunk
+                            except Exception:
+                                continue
+        except Exception as e:
+            logger.error(f"Gemini streaming exception: {e}")
+            yield f"Cephalon Ordis neural connection failed: {e}"
+
 
 def get_llm_provider() -> BaseLLMProvider:
     provider = settings.LLM_PROVIDER.lower()
-    if provider == "ollama":
-        return OllamaProvider()
+    if provider == "gemini":
+        return GeminiProvider()
+    elif provider == "ollama":
+        ollama = OllamaProvider()
+        if ollama.is_available():
+            return ollama
+        elif settings.GEMINI_API_KEY:
+            logger.info("Ollama unreachable. Auto-failing over to GeminiProvider.")
+            return GeminiProvider()
+        return ollama
+    elif settings.GEMINI_API_KEY:
+        return GeminiProvider()
     else:
-        logger.warning(f"Unsupported LLM_PROVIDER '{provider}'. Defaulting to OllamaProvider.")
         return OllamaProvider()
 
 

@@ -13,13 +13,26 @@ if frontend_dir not in sys.path:
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
+import socket
+
 _backend_process = None
+
+def is_port_in_use(host: str = "127.0.0.1", port: int = 8000) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.5)
+            return s.connect_ex((host, port)) == 0
+    except Exception:
+        return False
 
 def ensure_embedded_backend_running():
     """Starts FastAPI backend in a background subprocess if not already running on port 8000."""
     global _backend_process
+    if is_port_in_use("127.0.0.1", 8000):
+        return
+
     try:
-        res = httpx.get("http://127.0.0.1:8000/api/health", timeout=0.8)
+        res = httpx.get("http://127.0.0.1:8000/api/health", timeout=0.5)
         if res.status_code == 200:
             return
     except Exception:
@@ -37,7 +50,7 @@ def ensure_embedded_backend_running():
             cwd=root_dir,
             env=env
         )
-        time.sleep(1.5)
+        time.sleep(1.0)
     except Exception as e:
         print(f"Failed to start embedded backend process: {e}", flush=True)
 

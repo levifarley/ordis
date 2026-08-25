@@ -91,20 +91,21 @@ class BackgroundWorker:
             skipped_count = len(all_docs) - len(new_or_updated_docs)
             logger.info(f"Found {len(new_or_updated_docs)} new/updated documents ({skipped_count} skipped - unchanged).")
 
-            # 3. Generate embeddings and upsert in batches
-            batch_size = 50
-            upserted_count = 0
+            # 3. Generate embeddings and upsert in batches via background thread (non-blocking)
+            def _process_and_upsert_batches():
+                batch_size = 50
+                upserted = 0
+                for i in range(0, len(new_or_updated_docs), batch_size):
+                    batch_docs = new_or_updated_docs[i:i + batch_size]
+                    batch_embeddings = []
+                    for d in batch_docs:
+                        emb = self.llm.get_embedding(d["content"])
+                        batch_embeddings.append(emb)
+                    self.vector_store.add_documents(batch_docs, batch_embeddings)
+                    upserted += len(batch_docs)
+                return upserted
 
-            for i in range(0, len(new_or_updated_docs), batch_size):
-                batch_docs = new_or_updated_docs[i:i + batch_size]
-                batch_embeddings = []
-
-                for d in batch_docs:
-                    emb = self.llm.get_embedding(d["content"])
-                    batch_embeddings.append(emb)
-
-                self.vector_store.add_documents(batch_docs, batch_embeddings)
-                upserted_count += len(batch_docs)
+            upserted_count = await asyncio.to_thread(_process_and_upsert_batches)
 
             logger.info(f"Background ingestion completed. Upserted: {upserted_count}, Skipped: {skipped_count}.")
             return {

@@ -8,10 +8,12 @@ ORDIS is a fully local, containerized microservice Retrieval-Augmented Generatio
 
 ## 🌟 Key Features
 
-- **100% Local & Privacy-Focused**: Zero mandatory remote cloud dependencies or API keys required. Runs completely on local hardware.
+- **100% Local-First with Multi-LLM Engine**: Runs completely locally on your machine via Ollama (`gemma2:2b`), with optional support and automatic failover to the Google Gemini API (`gemini-1.5-flash`) via `GEMINI_API_KEY`.
+- **Instant UI Load**: Zero artificial delays or blocking splash screens—loads immediately to the Cephalon chat HUD.
 - **Grounded RAG Pipeline**: Combines vector similarity search (ChromaDB) with live Warframe Codex datasets.
 - **Model Context Protocol (MCP)**: Pluggable MCP cluster fetching real-time items feeds, Fandom Wiki guides, warframe.market trade statistics, and community builds.
 - **Sub-Millisecond Semantic Caching**: High-performance in-memory LRU cache storing vector embeddings to serve sub-millisecond hits for identical or similar queries.
+- **Non-Blocking Asynchronous Background Ingestion**: Data ingestion runs in background threads (`asyncio.to_thread`), ensuring the main event loop and health checks never freeze.
 - **Enterprise-Grade Security & Rate Limiting**: Protected by OAuth2 JWT Bearer tokens, prompt length limits, security cooldowns, and HTML sanitization hooks.
 - **Decoupled Microservice Stack**: Fully containerized via Docker Compose with lightweight non-root images.
 
@@ -28,7 +30,7 @@ ordis/
 │   ├── main.py                         # FastAPI REST API & SSE streaming chat endpoints
 │   ├── config.py                       # Centralized settings & environment configurations
 │   ├── auth.py                         # OAuth2 password flow & Bearer JWT token verification
-│   ├── rag_engine.py                   # Local RAG execution pipeline (Ollama Gemma + ChromaDB)
+│   ├── rag_engine.py                   # RAG execution pipeline (Ollama Gemma + Gemini + ChromaDB)
 │   ├── vector_store.py                 # Abstract BaseVectorStore & ChromaDB vector indexer
 │   ├── cache.py                        # In-memory Semantic LRU Cache (Cosine Similarity >= 0.92)
 │   ├── hooks.py                        # Extensible pre-prompt & post-response middleware hooks
@@ -102,6 +104,10 @@ Configuration settings are managed in `backend/config.py` and can be overridden 
 | `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `gemma2:2b` | Local LLM model identifier |
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Local text embedding model |
+| `GEMINI_API_KEY` | `""` | Optional Google Gemini API key for cloud failover |
+| `GEMINI_MODEL` | `gemini-1.5-flash` | Gemini LLM model identifier |
+| `GEMINI_EMBEDDING_MODEL` | `text-embedding-004` | Gemini embedding model |
+| `LLM_PROVIDER` | `ollama` | Provider selection (`ollama`, `gemini`, or `auto`) |
 | `LLM_TEMPERATURE` | `0.3` | Model generation sampling temperature |
 | `LLM_REPEAT_PENALTY` | `1.18` | Token repetition penalty |
 | `CHROMA_HOST` | `http://localhost:8000` | ChromaDB vector store host |
@@ -120,11 +126,17 @@ Launch the full stack with a single command:
 docker-compose up --build -d
 ```
 
-### Pull Ollama Models (First Run)
-```bash
-docker exec ordis-ollama ollama pull gemma2:2b
-docker exec ordis-ollama ollama pull nomic-embed-text
-```
+### Model Setup
+
+* **Option 1: Using Local Ollama (First Run)**:
+  Pull the generation and embedding models into the container:
+  ```bash
+  docker exec ordis-ollama ollama pull gemma2:2b
+  docker exec ordis-ollama ollama pull nomic-embed-text
+  ```
+
+* **Option 2: Using Google Gemini API**:
+  Set your API key in `.env` (`GEMINI_API_KEY=your_key_here`). No local model downloads required!
 
 ### Access Services
 - **Streamlit HUD UI**: [http://localhost:8080](http://localhost:8080)

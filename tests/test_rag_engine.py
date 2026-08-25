@@ -35,6 +35,7 @@ def test_ollama_provider_get_embedding_fallback():
 
 
 def test_ollama_provider_generate_stream():
+    OllamaProvider.reset_failure_cache()
     provider = OllamaProvider()
 
     class MockStreamResponse:
@@ -64,6 +65,7 @@ def test_ollama_provider_generate_stream():
 
 
 def test_ollama_provider_host_fallback():
+    OllamaProvider.reset_failure_cache()
     provider = OllamaProvider()
 
     class MockStreamResponse:
@@ -88,6 +90,42 @@ def test_ollama_provider_host_fallback():
     with patch("httpx.Client", return_value=MockClientWithFallback()):
         tokens = list(provider.generate_stream("Hello"))
         assert "".join(tokens) == "Fallback success!"
+
+
+def test_gemini_provider_embedding_and_stream():
+    from backend.rag_engine import GeminiProvider
+    with patch("backend.config.settings.GEMINI_API_KEY", "test_key"):
+        provider = GeminiProvider()
+        
+        mock_emb_resp = DummyResponse(200, {"embedding": {"values": [0.3] * 768}})
+        with patch("httpx.Client.post", return_value=mock_emb_resp):
+            emb = provider.get_embedding("test query")
+            assert len(emb) == 768
+            assert emb[0] == 0.3
+
+        class MockGeminiStreamResponse:
+            status_code = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
+            def iter_lines(self):
+                return [
+                    'data: {"candidates": [{"content": {"parts": [{"text": "Hello Operator!"}]}}]}',
+                    'data: [DONE]'
+                ]
+
+        class MockGeminiClient:
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                pass
+            def stream(self, method, url, json):
+                return MockGeminiStreamResponse()
+
+        with patch("httpx.Client", return_value=MockGeminiClient()):
+            tokens = list(provider.generate_stream("Hello"))
+            assert "".join(tokens) == "Hello Operator!"
 
 
 def test_semantic_cache_operations():
