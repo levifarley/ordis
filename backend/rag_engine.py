@@ -208,6 +208,13 @@ class GeminiProvider(BaseLLMProvider):
 
 
 def get_llm_provider() -> BaseLLMProvider:
+    from backend.billing_killswitch import billing_killswitch
+    
+    # Circuit breaker check: Force local Gemma if cloud circuit breaker is tripped
+    if billing_killswitch.is_circuit_open():
+        logger.warning("Cost circuit breaker ACTIVE: Routing request to zero-cost local OllamaProvider.")
+        return OllamaProvider()
+
     provider = settings.LLM_PROVIDER.lower()
     if provider == "gemini":
         return GeminiProvider()

@@ -106,6 +106,8 @@ async def health_check():
         background_worker={"is_ingesting": background_worker.is_ingesting}
     )
 
+from backend.billing_killswitch import billing_killswitch
+
 @app.post("/api/chat/stream")
 async def chat_stream(
     request: ChatRequest,
@@ -113,6 +115,11 @@ async def chat_stream(
 ):
     if not request.prompt or not request.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
+
+    # Validate cost guardrails, character limit boundaries, and rate limit cooldowns
+    is_valid, error_message = billing_killswitch.validate_request(request.prompt, user_id=current_user.username)
+    if not is_valid:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=error_message)
 
     def event_generator():
         stream_gen, payload = rag_engine.generate_response_stream(

@@ -1,30 +1,71 @@
-# Byte-compiled / optimized / DLL files
+# ==========================================
+# Byte-compiled / Python Build & Test Caches
+# ==========================================
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
 
-# IDE & AI Agent caches
+# ==========================================
+# Secrets, Keys & Environment Variables
+# ==========================================
+.env
+.env.*
+!.env.example
+secrets/
+secrets.py
+*.pem
+*.key
+*.crt
+*.p12
+
+# ==========================================
+# GCP & Cloud Service Account Credentials
+# ==========================================
+*cred*.json
+*service-account*.json
+gcloud_cred.json
+gcp-key.json
+*.gcp.json
+client_secret*.json
+
+# ==========================================
+# IDE & AI Agent Workspace Caches
+# ==========================================
 .agents/
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Environments & Dependencies
+# ==========================================
+# Environments & Virtual Dependencies
+# ==========================================
 venv/
 .venv/
 env/
 ENV/
 
-# Secrets & Local Configurations
-.env
-secrets.py
-
-# OS / System clutter
-.DS_Store
-Thumbs.db
-
-# Local database, cache, and telemetry logs
+# ==========================================
+# Local Databases, Caches & Telemetry Data
+# ==========================================
 chroma_db_storage/
 crawler_cache.json
 local_telemetry.jsonl
 scheduler_status.json
-gcloud_cred.json
+*.db
+*.sqlite3
+
+# ==========================================
+# Operating System Clutter
+# ==========================================
+.DS_Store
+Thumbs.db
